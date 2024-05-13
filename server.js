@@ -2,12 +2,16 @@ const express = require ('express');
 const mysql = require('mysql2');
 const dotenv = require('dotenv');
 const cors = require("cors");
-const axios = require("axios");
-require('dotenv').config();
-console.log(process.env.MYSQL_USER);
+const bcrypt = require("bcrypt");
+
+const app = express();
 
 // Load environment variables from .env file
 dotenv.config();
+
+// Middleware
+app.use(cors());  // Accepts requests from anywhere
+app.use(express.json()); // Parses incoming JSON payloads in the POST request body
 
 // Create MySQL connection pool
 const pool = mysql.createPool({
@@ -20,35 +24,139 @@ const pool = mysql.createPool({
   queueLimit: 0,
 });
 
-// Check if pool creation was successful
-pool.getConnection((err, connection) => {
-  if (err) {
-    console.error("Error connecting to MySQL:", err);
-    process.exit(1); // Exit the application if unable to connect to MySQL
-  }
-  console.log("Connected to MySQL database");
-  connection.release(); // Release the connection
-});
+// // Check if pool creation was successful
+// pool.getConnection((err, connection) => {
+//   if (err) {
+//     console.error("Error connecting to MySQL:", err);
+//     process.exit(1); // Exit the application if unable to connect to MySQL
+//   }
+//   console.log("Connected to MySQL database");
+//   connection.release(); // Release the connection
+// });
 
-const app = express();
+// API endpoints
 
-// Middleware
-app.use(cors());  // Accepts requests from anywhere
-app.use(express.json()); // Parses incoming JSON payloads in the POST request body
+//! Starting of APIs for Students and Teachers Login / Signup pages //
+//!-----------------------------------------------------------------//
+// Student Login 
+app.post("/students/login", (req, res) => {
+  const { email, password } = req.body; // grabbing data from req.body
 
-// API endpoint
-
-
-app.get('/', (req, res) => {
-  pool.query('SELECT VERSION() AS VERSION;', (err, result) => {
-    if (err) {
-      console.error("Error executing MySQL query:", err);
-      return res.status(500).send("Internal Server Error");
+  pool.execute( // runs the SQL query
+    "SELECT name, password  FROM student WHERE email = ?;",
+    [email],
+    (err, results) => {
+      if (err) { // check for any errors generated while running the query
+        console.log("Error occurred", err);
+        return res.status(500).json({ unkown: "Unknown error" });
+      }
+      // If no results are found in the table
+      else if (results.length === 0) {
+        return res.status(404).json({ error: "No user account with that e-mail address." });
+      }
+      // If at least one row in the table
+      else if (results.length >= 1) {
+        const hashedPass = results[0].password;
+        bcrypt.compare(password, hashedPass, (err, validPass) => { // check if passwords match
+          if (validPass) { // if they match send 200 status and name 
+            return res.status(200).json(results[0].name);
+          }
+          else { // passwords don't match
+            return res.status(401).json({ error: "Incorrect password" });
+          }
+        })
+       }
     }
-    res.send('Hello World ' + result[0].VERSION);
-  })
+  );
 });
 
+// Teachers Login
+app.post("/teachers/login", (req, res) => {
+  const { email, password } = req.body; // grabbing data from req.body
+
+  pool.execute(
+    // runs the SQL query
+    "SELECT name, password  FROM teacher WHERE email = ?;",
+    [email],
+    (err, results) => {
+      if (err) {
+        // check for any errors generated while running the query
+        console.log("Error occurred", err);
+        return res.status(500).json({ unkown: "Unknown error" });
+      }
+      // If no results are found in the table
+      else if (results.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "No user account with that e-mail address." });
+      }
+      // If at least one row in the table
+      else if (results.length >= 1) {
+        const hashedPass = results[0].password;
+        bcrypt.compare(password, hashedPass, (err, validPass) => {
+          // check if passwords match
+          if (validPass) {
+            return res.status(200).json(results[0].name);
+          } else {
+            // passwords don't match
+            return res.status(401).json({ error: "Incorrect password" });
+          }
+        });
+      }
+    }
+  );
+});
+
+// Students Signup
+app.post("/students/signup", (req, res) => {
+  const { name, email, password } = req.body; // grabbing data from req.body
+  const hashedPass = bcrypt.hashSync(password, 10); // Hashes the password using bcrypt
+
+  const queryString =
+    "INSERT INTO student (name, email, password) VALUES (?,?,?);";
+
+  pool.execute(queryString, [name, email, hashedPass], (err) => {
+    console.log(err);
+    if (err) { 
+      if (err.code === "ER_DUP_ENTRY") { // checks if the e-mail already exists in the database
+        return res.status(409).json({ error: "Email already exists." });
+      }
+      return res.sendStatus(500);
+    }
+    else {
+      return res.status(200).json({ message: "User created successfully" });
+    }
+  });
+});
+
+// Teachers Signup
+app.post("/teachers/signup", (req, res) => {
+  const { name, email, password } = req.body;
+  const hashedPass = bcrypt.hashSync(password, 10); // Hashes the password using bcrypt
+
+  const queryString =
+    "INSERT INTO teacher (name, email, password) VALUES (?,?,?);";
+
+  pool.execute(queryString, [name, email, hashedPass], (err) => {
+    console.log(err);
+    if (err) {
+      if (err.code === "ER_DUP_ENTRY") {
+        return res.status(409).json({ error: "Email already exists." });
+      }
+      console.log("Error creating user", err);
+      return res.sendStatus(500);
+    }
+    else {
+      return res.status(200).json({ message: "User created successfully" });
+    }
+  });
+});
+
+//! Starting of APIs for Students and Teachers Login / Signup pages //
+//!-----------------------------------------------------------------//
+
+//! Starting of APIs for Student Dash board ********************************* //
+//! --------------------------------------------------------------------------//
 // API endpoints for project table
 
 app.post('/api/project', (req, res) => {
@@ -140,7 +248,10 @@ app.get('/api/project/video', (req, res) => {
     res.send(Video);   
   });
 });
+//! Ending of APIs for Student Dash board ************************************ //
+//! --------------------------------------------------------------------------//
 
+// Set API port and start listening
 const PORT = 4000;
 app.listen(PORT, () => {
   console.log('Server is running on port', PORT);
