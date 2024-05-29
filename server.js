@@ -19,7 +19,7 @@ app.use("/Teachers", teacherRoutes);
 
 
 app.get("/", (req, res) => {
-  res.status(200).json({ Test: `${MYSQL_USER}` });
+  res.status(200).json({ Test: `${process.env.MYSQL_USER}` });
 })
 
 // Set API port and start listening
