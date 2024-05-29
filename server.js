@@ -17,6 +17,11 @@ app.use("/Students", studentRoutes);
 // re-direct Students API routes to studentRoutes
 app.use("/Teachers", teacherRoutes);
 
+
+app.get("/", (req, res) => {
+  res.status(200).json({ Test: "This is a test" });
+})
+
 // Set API port and start listening
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
